@@ -4,8 +4,13 @@
 
 ### imapfilter
 
+- `sudo apt-get update`
 - `sudo apt-get install imapfilter`
 - Copy `config.lua` into `/home/admin/.imapfilter/`
+
+### zfilter
+
+- `sudo apt-get install git`
 
 ### systemd
 
