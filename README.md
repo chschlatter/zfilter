@@ -2,6 +2,13 @@
 
 ## Installation
 
+### imapfilter
+
+- `sudo apt-get install imapfilter`
+- Copy `config.lua` into `/home/admin/.imapfilter/`
+
+### systemd
+
 - Copy `imapfilter.service` into `/etc/systemd/system/`
 - `sudo systemctl daemon-reload`
 - `sudo systemctl enable imapfilter`
