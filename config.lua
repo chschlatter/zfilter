@@ -6,10 +6,12 @@ options.zfilter = {
 }
 
 -- global IMAP account
+local status, imap_password = pipe_from('cat .imap_password')
+imap_password = imap_password:gsub("(.+)[\n\r]$", "%1") -- remove trailing newline
 local account = IMAP {
   server = "secure.emailsrvr.com",
   username = "ch@schlatter.net",
-  password = "Unti 0001",
+  password = imap_password,
   port = 993,
   ssl = "tls1"
 }

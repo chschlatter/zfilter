@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/imapfilter -c /home/admin/.imapfilter/config.lua
+WorkingDirectory=/home/admin
+ExecStart=/usr/bin/imapfilter -c .imapfilter/config.lua
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=always
