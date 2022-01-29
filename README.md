@@ -1,6 +1,6 @@
 # zfilter
 
-## Installation
+## Installation
 
 - Copy `imapfilter.service` into `/etc/systemd/system/`
 - `sudo systemctl daemon-reload`
@@ -16,6 +16,6 @@
 
 - `sudo systemctl reload imapfilter.service`
 
-## cron
+## cron
 
 - Copy `imapfilter.cron` into `/etc/cron.hourly/`
