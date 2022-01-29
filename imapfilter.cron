@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/usr/bin/systemctl kill -s SIGUSR1 imapfilter.service
