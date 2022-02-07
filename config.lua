@@ -2,12 +2,13 @@
 options.zfilter = {
 	min_update_interval = 60 * 60 * 6, -- seconds,
 	root_imap_folder = "Topics",
-	min_email_log_interval = 60 * 60 * 24 -- seconds
+	min_email_log_interval = 60 * 60 * 24, -- seconds
+	min_apply_rules_all_interval = 60 * 60 * 24 -- seconds
 }
 
 -- global IMAP account
 local status, imap_password = pipe_from('cat .imap_password')
-imap_password = imap_password:gsub("(.+)[\n\r]$", "%1") -- remove trailing newline
+imap_password = string.match(imap_password, "(.+)[\n\r]$") -- remove trailing newline
 local account = IMAP {
   server = "secure.emailsrvr.com",
   username = "ch@schlatter.net",
@@ -58,114 +59,162 @@ local function get_subfolders (folder, result)
 	return result
 end
 
-local function parse_from_addr (from_field)
-	local from_addr = nil
-	if (string.find(from_field, "(<.+>)")) then
-    	_, _, from_addr = string.find(from_field, "(<.+>)")
-    else
-        _, _, from_addr = string.find(from_field, "From: (.+)")
-    end
-    return from_addr
+local function get_from_addr (mbox, uid)
+	local from_field = mbox[uid]:fetch_field("From")
+	-- (very) loose addr-spec parsing here (see details at 
+	-- https://datatracker.ietf.org/doc/html/rfc5322#section-3.4.1,
+	-- and "loose" spec at http://hm2k.com/posts/what-is-a-valid-email-address )
+	return string.match(from_field, "<?(%S+@[%w%.-]+)>?")
 end
 
-local function update_rules (folder, existing_rules)
+local function update_folder_rules (folder, old_rules)
 	local new_rules = {}
-	local messages = account[folder]:select_all()
-	existing_rules = existing_rules or {}
-
-	local function log_rule(action, from_addr, folder, msg_count)
-		log("update_rules(): " .. action .. " [" .. folder .. "] " .. 
-			from_addr .. " ( " .. msg_count .. " message(s))")
-	end
+	old_rules = old_rules or {}
+	local mails = account[folder]:select_all()
 
 	-- check existing rules
-	for _, from_addr in ipairs(existing_rules) do
-		local results = account[folder]:contain_from(from_addr)
+	for _, from_addr in ipairs(old_rules) do
+		local results = mails:contain_from(from_addr)
 		if #results > 0 then
-			table.insert(new_rules, from_addr)
-			-- log_rule("KEEP", from_addr, folder, #results)
-			messages = messages - results
+			new_rules[#new_rules + 1] = from_addr
+			mails = mails - results
 		else
-			log_rule("DELETE", from_addr, folder, 0)
+			log("update_rules(): DELETE 'From: " .. from_addr .. "' -> " .. folder)
 		end
 	end
 
 	-- check remaining messages in folder
-	while #messages > 0 do
-		local mbox, uid = table.unpack(table.remove(messages))
-		local from_field = mbox[uid]:fetch_field("From")
-		local from_addr = parse_from_addr(from_field)
-		if from_addr then
-			local results = account[folder]:contain_from(from_addr)
-			if #results > 0 then
-				table.insert(new_rules, from_addr)
-				messages = messages - results
-				log_rule("ADD", from_addr, folder, #results)
-			end -- else: malformed From: address
-		end
+	while #mails > 0 do
+		local mbox, uid = table.unpack(table.remove(mails))
+		local from_addr = get_from_addr(mbox, uid)
+		new_rules[#new_rules + 1] = from_addr
+		log("update_rules(): ADD 'From: " .. from_addr .. "' -> " .. folder)
+		mails = mails - mails:contain_from(from_addr)
 	end
 
 	return new_rules
 end
 
-local function update_all_rules(root_folder, existing_rules)
-	local rules = {}
+local function update_all_rules (root_folder, old_rules)
+	local new_rules = {}
+	old_rules = old_rules or {}
 	local start_time = os.time()
-	existing_rules = existing_rules or {}
 
 	for _, folder in ipairs(get_subfolders(root_folder)) do
-		rules[folder] = update_rules(folder, existing_rules[folder])
+		new_rules[folder] = update_folder_rules(folder, old_rules[folder])
 	end
 	log("update_all_rules(): completed in " ..
 		os.difftime(os.time(), start_time) .. " seconds.")
 
-	log("update_all_rules(): All rules:")
-	for folder, folder_rules in pairs(rules) do
-		log("Folder [" .. folder .. "]:")
+	local conso_rules = {}
+	for folder, folder_rules in pairs(new_rules) do
 		for _, from_addr in ipairs(folder_rules) do
-			log(from_addr)
-		end
-	end
-
-	return rules
-end
-
-local function apply_rules (mbox, rules)
-	rules = rules or {}
-	print("apply_rules(): #rules: " .. #rules)
-	for folder, folder_rules in pairs(rules) do
-		for _, from_addr in ipairs(folder_rules) do
-			local results = mbox:contain_from(from_addr)
-			if #results > 0 then
-				log("apply_rules(): moved " .. #results .. " messages with From: addr " ..
-					from_addr .. " to folder " .. folder .. ".")
-				results:move_messages(account[folder])
+			if conso_rules[from_addr] then
+				log("update_all_rules(): found DUPLICATE rule 'From: " ..
+					from_addr .. "' -> " .. conso_rules[from_addr] .. " and " ..
+					folder .. "\n  IGNORING " .. folder)
+			else
+				conso_rules[from_addr] = folder
 			end
 		end
 	end
+
+	log("update_all_rules(): listing all rules ...")
+	for from_addr, folder in pairs(conso_rules) do
+		log("  'From: " .. from_addr .. "' -> " .. folder)
+	end
+
+	return new_rules, conso_rules
 end
 
+local function apply_rules_all (mbox, conso_rules)
+	conso_rules = conso_rules or {}
+	local start_time = os.time()
+	local rules_count = 0
+
+	for from_addr, folder in pairs(conso_rules) do
+		rules_count = rules_count + 1
+		local mails = mbox:contain_from(from_addr)
+		if #mails > 0 then
+			log("apply_rules_all(): Moving " .. #mails .. " mail(s) with From: " ..
+				from_addr .. " to folder " .. folder .. ".")
+			mails:move_messages(account[folder])
+		end
+	end
+	log("apply_rules_all(): applied " .. rules_count .. " rules in " .. 
+		os.time() - start_time .. " secs.")
+end
+
+local function apply_rules_unseen (mbox, conso_rules)
+	conso_rules = conso_rules or {}
+	local start_time = os.time()
+	local rules_count = 0
+	local mails = account.INBOX:is_unseen()
+	local unseen_mails = #mails
+
+	while #mails > 0 do
+		local mbox, uid = table.unpack(mails[1])
+		local from_addr = get_from_addr(mbox, uid)
+		local folder = conso_rules[from_addr]
+		if folder then
+			rules_count = rules_count + 1
+			local results = mails:contain_from(from_addr)
+			if #resulst > 0 then
+				log("apply_rules_unseen(): Moving " .. #results .. " mail(s) with From: " ..
+					from_addr .. " to folder " .. folder .. ".")
+				results:move_messages(account[folder])
+				mails = mails - results
+			end
+		else
+			table.remove(mails)
+		end
+	end
+	log("apply_rules_unseen(): applied " .. rules_count .. " rules " ..
+		" on " .. unseen_mails .. " unseen mails, in " .. 
+		os.time() - start_time .. " secs.")
+end
+
+
+local rules, conso_rules
+local timers = { 
+	rules_last_updated = 0,
+	rules_last_applied_all = 0,
+	email_last_sent = 0 }
+
 while true do
-   	if (not rules_last_updated) or 
-   		os.difftime(os.time(), rules_last_updated) > options.zfilter.min_update_interval then
-      	rules = update_all_rules(options.zfilter.root_imap_folder, rules)
-      	rules_last_updated = os.time()
-   	end
-   	if (not email_last_sent) or 
-   		os.difftime(os.time(), email_last_sent) > options.zfilter.min_email_log_interval then
-   			log(nil, true)
-   			email_last_sent = os.time()
-   	end
+	-- UPDATE rules
+	if os.difftime(os.time(), timers.rules_last_updated) >
+		options.zfilter.min_update_interval
+	then
+		rules, conso_rules = update_all_rules(options.zfilter.root_imap_folder, rules)
+		timers.rules_last_updated = os.time()
+	end
 
-   	apply_rules(account.INBOX, rules)
+  -- APPLY rules
+	if os.difftime(os.time(), timers.rules_last_applied_all) > 
+		options.zfilter.min_apply_rules_all_interval 
+	then
+		apply_rules_all(account.INBOX, conso_rules)
+		timers.rules_last_applied_all = os.time()
+	else
+		apply_rules_unseen(account.INBOX, conso_rules)
+	end
 
-   	update, event = account.INBOX:enter_idle()
-   	if not update then
-      	print("Server does not support IMAP IDLE. Sleeping ...")
-      	sleep(600)
-   	elseif not event then
-      	print("*** SIGUSR1/2 received. ***")
-   	else
-      	print("*** IMAP Event [" .. event .. "] ***")
-   	end
+	-- SEND log email
+	if os.difftime(os.time(), timers.email_last_sent) >
+		options.zfilter.min_email_log_interval
+	then
+		log(nil, true)
+		timers.email_last_sent = os.time()
+	end
+
+  update, event = account.INBOX:enter_idle()
+  if not update then
+  	print("Server does not support IMAP IDLE. Sleeping ...")
+    sleep(600)
+  elseif not event then
+     print("*** SIGUSR1/2 received. ***")
+  else
+     print("*** IMAP Event [" .. event .. "] ***")
+  end
 end
