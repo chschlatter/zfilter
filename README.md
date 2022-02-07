@@ -6,15 +6,19 @@
 
 - `sudo apt-get update`
 - `sudo apt-get install imapfilter`
-- Copy `config.lua` into `/home/admin/.imapfilter/`
 
 ### zfilter
 
+- `cd ~` (`/home/admin`)
 - `sudo apt-get install git`
+- `git clone https://github.com/chschlatter/zfilter.git .imapfilter`
+- create password file for IMAP login: `echo "<pwd>" > .imap_password`, `chmod 600 .imap_password`
+- test run: `imapfilter -c .imapfilter/config.lua`
 
 ### systemd
 
-- Copy `imapfilter.service` into `/etc/systemd/system/`
+- `cd ~` (`/home/admin`)
+- `sudo cp .imapfilter/imapfilter.service /etc/systemd/system`
 - `sudo systemctl daemon-reload`
 - `sudo systemctl enable imapfilter`
 - `sudo systemctl start imapfilter.service`
@@ -28,6 +32,13 @@
 
 - `sudo systemctl reload imapfilter.service`
 
-## cron
+### git
+
+- github credentials:
+  - `git config --global credential.helper store`
+  - `git push -u origin master`
+  - see `~/.git-credentials` for password
+
+## cron (optional)
 
 - Copy `imapfilter.cron` into `/etc/cron.hourly/`
