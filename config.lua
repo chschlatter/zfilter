@@ -17,43 +17,41 @@ local account = IMAP {
   ssl = "tls1"
 }
 
--- Return a timezone string in ISO 8601:2000 standard form (+hhmm or -hhmm)
-local function get_tzoffset()
-  local now = os.time()
-  local tz = os.difftime(now, os.time(os.date("!*t", now)))
-  local h, m = math.modf(tz / 3600)
+local Log = { loglines = {} }
+
+-- timezone string in ISO 8601:2000 standard form (+hhmm or -hhmm)
+function Log:get_tz_str()
+  local tz_secs = os.difftime(os.time(), os.time(os.date("!*t", now)))
+  local h, m = math.modf(tz_secs / 3600)
   return string.format("%+.4d", 100 * h + 60 * m)
 end
 
--- Print msg and insert it into loglines
--- to_email == True: send email with loglines and reset loglines
-local function logger ()
-  local loglines = {}
-  return function (msg, to_email)
-      if msg then
-        print(msg)
-        table.insert(loglines, os.date("%y-%m-%d %H%M ") .. get_tzoffset() .. " " .. msg)
-      end
-      if to_email then
-        table.insert(loglines, 1, "From: log@imapfilter")
-        table.insert(loglines, 2, "Subject: imapfilter log")
-        table.insert(loglines, 3, "Date: " .. os.date("%a, %d %b %Y %X ") .. get_tzoffset())
-        table.insert(loglines, 4, "")
-        if not account.INBOX:append_message(table.concat(loglines, "\r\n")) then
-          print("log_email(): account.INBOX:append_message() failed.")
-        end
-        loglines = {}
-      end
-    end
-end
-local log = logger()
+-- print msg and add to loglines array for later inclusion in log email
+function Log:add(msg)
+  if not msg then return nil, "no msg provided to log" end
 
-local Rules = {
-  rules = {},
-  conso_rules = {},
-  old_rules = {},
-  root_folder = options.zfilter.root_imap_folder
-}
+  local tz_secs = os.difftime(os.time(), os.time(os.date("!*t", now)))
+  local h, m = math.modf(tz_secs / 3600)
+  local tz_str = string.format("%+.4d", 100 * h + 60 * m)
+
+  print(msg)
+  table.insert(self.loglines, os.date("%y-%m-%d %H%M ") .. self:get_tz_str() .. " " .. msg)
+end
+
+-- shortcut for Log:add()
+local function log(msg) Log:add(msg) end
+
+-- append log email to mbox including loglines
+function Log:mail(mbox)
+  table.insert(self.loglines, 1, "From: log@imapfilter")
+  table.insert(self.loglines, 2, "Subject: imapfilter log")
+  table.insert(self.loglines, 3, "Date: " .. os.date("%a, %d %b %Y %X ") .. self:get_tz_str())
+  table.insert(self.loglines, 4, "")
+  if not mbox:append_message(table.concat(self.loglines, "\r\n")) then
+    print("Log:mail(): mbox:append_message() failed.")
+  end
+  self.loglines = {}
+end
 
 local function get_subfolders (folder, result)
   result = result or {}
@@ -74,6 +72,13 @@ local function get_from_addr (mbox, uid)
   -- and "loose" spec at http://hm2k.com/posts/what-is-a-valid-email-address )
   return string.match(from_field, "<?(%S+@[%w%.-]+)>?")
 end
+
+local Rules = {
+  rules = {},
+  conso_rules = {},
+  old_rules = {},
+  root_folder = options.zfilter.root_imap_folder
+}
 
 function Rules:update_by_folder (folder)
   local new_rules = {}
@@ -187,27 +192,28 @@ local function interval_timer (min_interval)
   end
 end
 
-local update_timer = interval_timer(options.zfilter.min_update_interval)
-local apply_timer = interval_timer(options.zfilter.min_apply_rules_all_interval)
-local email_timer = interval_timer(options.zfilter.min_email_log_interval)
-
+local timers = {
+  update = interval_timer(options.zfilter.min_update_interval),
+  apply = interval_timer(options.zfilter.min_apply_rules_all_interval),
+  email = interval_timer(options.zfilter.min_email_log_interval),
+}
 
 while true do
   -- UPDATE rules
-  if update_timer() then
+  if timers.update() then
     Rules:update_all()
   end
 
   -- APPLY rules
-  if apply_timer() then
+  if timers.apply() then
     Rules:apply_all(account.INBOX)
   else
     Rules:apply_unseen(account.INBOX)
   end
-  
+
   -- SEND log email
-  if email_timer() then
-    log(nil, true)
+  if timers.email() then
+    Log:mail(account.INBOX)
   end
 
   update, event = account.INBOX:enter_idle()
