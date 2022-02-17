@@ -32,13 +32,6 @@
 
 - `sudo systemctl reload imapfilter.service`
 
-### git
-
-- github credentials:
-  - `git config --global credential.helper store`
-  - `git push -u origin master`
-  - see `~/.git-credentials` for password
-
 ## cron (optional)
 
 - Copy `imapfilter.cron` into `/etc/cron.hourly/`
