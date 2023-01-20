@@ -13,7 +13,13 @@
 - `sudo apt-get install git`
 - `git clone https://github.com/chschlatter/zfilter.git .imapfilter`
 - create password file for IMAP login: `echo "<pwd>" > .imap_password`, `chmod 600 .imap_password`
-- test run: `imapfilter -c .imapfilter/config.lua`
+- create log file
+```
+$ sudo touch /var/log/imapfilter
+$ sudo chgrp adm /var/log/imapfilter
+$ sudo chmod 660 /var/log/imapfilter
+```
+- test run: `imapfilter -c .imapfilter/config.lua -l /var/log/imapfilter`
 
 ### systemd
 
