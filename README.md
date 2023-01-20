@@ -4,8 +4,10 @@
 
 ### imapfilter
 
-- `sudo apt-get update`
-- `sudo apt-get install imapfilter`
+```bash
+$ sudo apt-get update
+$ sudo apt-get install imapfilter
+```
 
 ### zfilter
 
@@ -23,20 +25,26 @@ $ sudo chmod 660 /var/log/imapfilter
 
 ### systemd
 
-- `cd ~` (`/home/admin`)
-- `sudo cp .imapfilter/imapfilter.service /etc/systemd/system`
-- `sudo systemctl daemon-reload`
-- `sudo systemctl enable imapfilter`
-- `sudo systemctl start imapfilter.service`
+```bash
+$ cd ~ (`/home/admin`)
+$ sudo cp .imapfilter/imapfilter.service /etc/systemd/system
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable imapfilter
+$ sudo systemctl start imapfilter.service
+```
 
 ## Monitoring
 
-- `systemctl status imapfilter`
-- `sudo journalctl -u imapfilter.service -f -n 500`
+```bash
+$ systemctl status imapfilter
+$ sudo journalctl -u imapfilter.service -f -n 500
+```
 
 ## Updating
 
-- `sudo systemctl reload imapfilter.service`
+```bash
+$ sudo systemctl reload imapfilter.service
+```
 
 ## cron (optional)
 
